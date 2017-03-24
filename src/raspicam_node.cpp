@@ -142,7 +142,7 @@ typedef struct
 
 static void display_valid_parameters(char *app_name);
 
-
+int start_capture(RASPIVID_STATE *state);
 
 
 /**
@@ -153,6 +153,7 @@ static void display_valid_parameters(char *app_name);
 static void get_status(RASPIVID_STATE *state)
 {
    int temp;
+   bool bool_temp,hflip,vflip,start;
    std::string str;
    if (!state)
    {
@@ -206,6 +207,20 @@ static void get_status(RASPIVID_STATE *state)
 	ros::param::set("~tf_prefix", "");
    }
 
+   if (ros::param::get("~hflip", bool_temp)){
+	hflip = bool_temp;
+   }else{
+	hflip = false;
+	ros::param::set("~hflip",false);
+   }
+
+   if (ros::param::get("~vflip", bool_temp)){
+        vflip = bool_temp;
+   }else{
+        vflip = false;
+        ros::param::set("~vflip",false);
+   }
+
    state->isInit = 0;
 
    // Setup preview window defaults
@@ -213,6 +228,9 @@ static void get_status(RASPIVID_STATE *state)
 
    // Set up the camera_parameters to default
    raspicamcontrol_set_defaults(&state->camera_parameters);
+   state->camera_parameters.hflip = hflip?1:0;
+   state->camera_parameters.vflip = vflip?1:0;
+
 }
 
 
@@ -790,10 +808,17 @@ bool serv_stop_cap(	std_srvs::Empty::Request  &req,
 int main(int argc, char **argv){
    ros::init(argc, argv, "raspicam_node");
    ros::NodeHandle n;
-   camera_info_manager::CameraInfoManager c_info_man (n, "camera", "package://raspicam/calibrations/camera.yaml");
-   get_status(&state_srv);
 
-   if(!c_info_man.loadCameraInfo ("package://raspicam/calibrations/camera.yaml")){
+   std::string camera_info_uri("package://raspicam/calibrations/camera.yaml");
+   if(ros::param::has("~camera_info_uri"))
+   {
+      ros::param::get("~camera_info_uri", camera_info_uri);
+   }
+   
+   camera_info_manager::CameraInfoManager c_info_man(n, "camera");
+   get_status(&state_srv);
+   
+   if(!c_info_man.loadCameraInfo (camera_info_uri)){
 	ROS_INFO("Calibration file missing. Camera not calibrated");
    }
    else
@@ -805,6 +830,8 @@ int main(int argc, char **argv){
    camera_info_pub = n.advertise<sensor_msgs::CameraInfo>("camera/camera_info", 1);
    ros::ServiceServer start_cam = n.advertiseService("camera/start_capture", serv_start_cap);
    ros::ServiceServer stop_cam = n.advertiseService("camera/stop_capture", serv_stop_cap);
+
+   start_capture(&state_srv);   
    ros::spin();
    close_cam(&state_srv);
    return 0;
